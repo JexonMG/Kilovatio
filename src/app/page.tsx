@@ -110,7 +110,7 @@ function ReceiptModal({
                   {tariff > 0 && (
                     <tr>
                       <td>Tarifa aplicada</td>
-                      <td style={{ textAlign: 'right' }}>${tariff} / kWh</td>
+                      <td style={{ textAlign: 'right' }}>₡{tariff} / kWh</td>
                     </tr>
                   )}
                 </>
@@ -125,7 +125,7 @@ function ReceiptModal({
           {measurement.consumption !== null && tariff > 0 && (
             <div className="receipt-total-box">
               <div className="receipt-total-label">TOTAL A PAGAR</div>
-              <div className="receipt-total-amount">${(measurement.consumption * tariff).toFixed(2)}</div>
+              <div className="receipt-total-amount">₡{(measurement.consumption * tariff).toFixed(2)}</div>
             </div>
           )}
           {measurement.consumption !== null && tariff === 0 && (
@@ -548,7 +548,7 @@ export default function Home() {
           <div className="tariff-badge">
             <div className="tariff-badge-label">Tarifa actual</div>
             <div className="tariff-badge-value">
-              {settings.tariff > 0 ? `$${settings.tariff} / kWh` : 'No definida'}
+              {settings.tariff > 0 ? `₡${settings.tariff} / kWh` : 'No definida'}
             </div>
           </div>
         </div>
@@ -579,7 +579,7 @@ export default function Home() {
         </div>
         <div className="stat-card">
           <div className="stat-label">Costo Estimado</div>
-          <div className="stat-value green">{settings.tariff > 0 ? `$${totalCost.toFixed(2)}` : '—'}</div>
+          <div className="stat-value green">{settings.tariff > 0 ? `₡${totalCost.toFixed(2)}` : '—'}</div>
           <div className="stat-sub">{settings.tariff > 0 ? 'calculado' : 'configura tarifa'}</div>
         </div>
       </div>
@@ -726,7 +726,7 @@ export default function Home() {
                   </td>
                   {settings.tariff > 0 && (
                     <td style={{ fontWeight: 600, color: 'var(--success)' }}>
-                      {m.cost !== null ? `$${m.cost.toFixed(2)}` : '—'}
+                      {m.cost !== null ? `₡${m.cost.toFixed(2)}` : '—'}
                     </td>
                   )}
                   <td className="no-print">
@@ -757,7 +757,7 @@ export default function Home() {
               <span style={{ color: 'var(--text)' }}>
                 Total Costo:{' '}
                 <span style={{ color: 'var(--success)' }}>
-                  ${filtered.reduce((sum, m) => sum + (m.cost ?? 0), 0).toFixed(2)}
+                  ₡{filtered.reduce((sum, m) => sum + (m.cost ?? 0), 0).toFixed(2)}
                 </span>
               </span>
             )}
@@ -814,7 +814,7 @@ export default function Home() {
                     <label htmlFor="unpaidMeas">Seleccione Mes Pendiente</label>
                     <select id="unpaidMeas" className="form-input" value={selectedMeasId} onChange={e => setSelectedMeasId(e.target.value)}>
                       {unpaidForApt.map(m => {
-                        const costText = m.cost !== null ? ` ($${m.cost.toFixed(2)})` : '';
+                        const costText = m.cost !== null ? ` (₡${m.cost.toFixed(2)})` : '';
                         return (
                           <option key={m.id} value={m.id} style={{ background: '#0a0f1e' }}>
                             {MONTHS[m.month - 1]} {m.year} · +{m.consumption} kWh{costText}
@@ -854,7 +854,7 @@ export default function Home() {
                   <tr key={m.id}>
                     <td style={{ fontWeight: 600 }}>{MONTHS[m.month - 1]} {m.year}</td>
                     <td><span className="badge badge-amber">+{m.consumption} kWh</span></td>
-                    <td style={{ color: 'var(--success)', fontWeight: 600 }}>{m.cost !== null ? `$${m.cost.toFixed(2)}` : '—'}</td>
+                    <td style={{ color: 'var(--success)', fontWeight: 600 }}>{m.cost !== null ? `₡${m.cost.toFixed(2)}` : '—'}</td>
                   </tr>
                 ))}
                 {unpaidForApt.length === 0 && (
@@ -1065,7 +1065,7 @@ export default function Home() {
           </p>
           <form onSubmit={handleSaveTariff}>
             <div className="form-group">
-              <label htmlFor="tariff">Precio por kWh ($)</label>
+              <label htmlFor="tariff">Precio por kWh (₡)</label>
               <input type="number" id="tariff" className="form-input" value={tariffInput}
                 onChange={e => setTariffInput(e.target.value)} step="0.0001" placeholder="Ej. 0.2500" required />
             </div>
