@@ -8,6 +8,7 @@ interface Measurement {
   year: number;
   month: number;
   reading: number;
+  paid: boolean;
   createdAt: string;
 }
 
@@ -55,6 +56,9 @@ export default function Home() {
 
   // Apartamentos
   const [newAptName, setNewAptName] = useState('');
+  const [initialReading, setInitialReading] = useState('');
+  const [aptYear, setAptYear] = useState(new Date().getFullYear());
+  const [aptMonth, setAptMonth] = useState(new Date().getMonth() + 1);
 
   // Ajustes
   const [tariffInput, setTariffInput] = useState('');
@@ -64,23 +68,25 @@ export default function Home() {
   const [fApt, setFApt] = useState('all');
   const [fYear, setFYear] = useState('');
   const [fMonth, setFMonth] = useState('');
+  const [fPaid, setFPaid] = useState<'all' | 'unpaid' | 'paid'>('all');
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
   useEffect(() => { fetchAll(); }, []);
 
   async function fetchAll() {
     try {
       setLoading(true);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
       const [a, s, m] = await Promise.all([
         fetch(`${API_URL}/api/apartments`).then(r => r.json()),
         fetch(`${API_URL}/api/settings`).then(r => r.json()),
         fetch(`${API_URL}/api/measurements`).then(r => r.json()),
       ]);
-      setApartments(a);
-      setSettings(s);
-      setMeasurements(m);
-      setTariffInput(s.tariff.toString());
-      if (a.length > 0) setRegAptId(prev => prev || a[0].id);
+      setApartments(Array.isArray(a) ? a : []);
+      setSettings(s ?? { tariff: 0 });
+      setMeasurements(Array.isArray(m) ? m : []);
+      setTariffInput((s?.tariff ?? 0).toString());
+      if (Array.isArray(a) && a.length > 0) setRegAptId(prev => prev || a[0].id);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -106,10 +112,15 @@ export default function Home() {
   const totalKwh = processed.reduce((s, m) => s + (m.consumption ?? 0), 0);
   const totalCost = processed.reduce((s, m) => s + (m.cost ?? 0), 0);
 
+  // Unpaid = measurements with real consumption (not the initial reading) that are not paid
+  const unpaidCount = processed.filter(m => !m.paid && m.consumption !== null).length;
+
   const filtered = processed.filter(m => {
     if (fApt !== 'all' && m.apartmentId !== fApt) return false;
     if (fYear && String(m.year) !== fYear) return false;
     if (fMonth && String(m.month) !== fMonth) return false;
+    if (fPaid === 'unpaid' && (m.paid || m.consumption === null)) return false;
+    if (fPaid === 'paid' && !m.paid) return false;
     return true;
   });
 
@@ -122,7 +133,6 @@ export default function Home() {
     if (!reading || !regAptId) return;
     setSubmitting(true);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
       const res = await fetch(`${API_URL}/api/measurements`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apartmentId: regAptId, year, month, reading: parseFloat(reading) }),
@@ -138,33 +148,60 @@ export default function Home() {
   async function handleCreateApt(e: React.FormEvent) {
     e.preventDefault();
     if (!newAptName.trim()) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
     const res = await fetch(`${API_URL}/api/apartments`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newAptName.trim() }),
     });
-    if (res.ok) { setNewAptName(''); await fetchAll(); }
+    if (res.ok) {
+      const apt = await res.json();
+      // If user entered an initial reading, create the first measurement
+      if (initialReading.trim() !== '') {
+        await fetch(`${API_URL}/api/measurements`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apartmentId: apt.id,
+            year: aptYear,
+            month: aptMonth,
+            reading: parseFloat(initialReading),
+          }),
+        });
+      }
+      setNewAptName('');
+      setInitialReading('');
+      await fetchAll();
+    }
   }
 
   async function handleDeleteApt(id: string) {
     if (!confirm('¿Eliminar este apartamento y todo su historial?')) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
     await fetch(`${API_URL}/api/apartments?id=${id}`, { method: 'DELETE' });
     await fetchAll();
   }
 
   async function handleDeleteMeas(id: string) {
     if (!confirm('¿Eliminar esta medición?')) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
     await fetch(`${API_URL}/api/measurements?id=${id}`, { method: 'DELETE' });
     await fetchAll();
+  }
+
+  async function handleTogglePaid(id: string, current: boolean) {
+    // Optimistic update
+    setMeasurements(prev => prev.map(m => m.id === id ? { ...m, paid: !current } : m));
+    try {
+      await fetch(`${API_URL}/api/measurements/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid: !current }),
+      });
+    } catch {
+      // Revert on error
+      setMeasurements(prev => prev.map(m => m.id === id ? { ...m, paid: current } : m));
+    }
   }
 
   async function handleSaveTariff(e: React.FormEvent) {
     e.preventDefault();
     const val = parseFloat(tariffInput);
     if (isNaN(val)) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
     const res = await fetch(`${API_URL}/api/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tariff: val }),
@@ -187,7 +224,10 @@ export default function Home() {
           {NAV.map(n => (
             <button key={n.id} className={`nav-item ${tab === n.id ? 'active' : ''}`} onClick={() => navigate(n.id)}>
               <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>{n.icon}</span>
-              {n.label}
+              <span style={{ flex: 1, textAlign: 'left' }}>{n.label}</span>
+              {n.id === 'historial' && unpaidCount > 0 && (
+                <span className="nav-badge">{unpaidCount}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -312,9 +352,11 @@ export default function Home() {
   const TabHistorial = () => (
     <div className="fade-in">
       <div className="page-header">
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <div className="page-title">Historial</div>
-          <div className="page-subtitle">{filtered.length} registros encontrados</div>
+          {unpaidCount > 0 && (
+            <span className="unpaid-badge">{unpaidCount} sin pagar</span>
+          )}
         </div>
         <button className="btn btn-success no-print" onClick={() => window.print()}>
           🖨️ Imprimir Reporte
@@ -331,8 +373,13 @@ export default function Home() {
             <option value="" style={{ background: '#0a0f1e' }}>Todos los meses</option>
             {MONTHS.map((m,i) => <option key={m} value={i+1} style={{ background: '#0a0f1e' }}>{m}</option>)}
           </select>
-          {(fApt !== 'all' || fYear || fMonth) && (
-            <button className="btn btn-danger" onClick={() => { setFApt('all'); setFYear(''); setFMonth(''); }}>
+          <select className="form-input form-input-sm" style={{ width: 'auto' }} value={fPaid} onChange={e => setFPaid(e.target.value as 'all'|'unpaid'|'paid')}>
+            <option value="all" style={{ background: '#0a0f1e' }}>Todos los estados</option>
+            <option value="unpaid" style={{ background: '#0a0f1e' }}>Sin pagar</option>
+            <option value="paid" style={{ background: '#0a0f1e' }}>Pagados</option>
+          </select>
+          {(fApt !== 'all' || fYear || fMonth || fPaid !== 'all') && (
+            <button className="btn btn-danger" onClick={() => { setFApt('all'); setFYear(''); setFMonth(''); setFPaid('all'); }}>
               Limpiar filtros
             </button>
           )}
@@ -342,6 +389,7 @@ export default function Home() {
           <table>
             <thead>
               <tr>
+                <th>Estado</th>
                 <th>Apartamento</th>
                 <th>Mes</th>
                 <th>Año</th>
@@ -353,7 +401,23 @@ export default function Home() {
             </thead>
             <tbody>
               {filtered.map(m => (
-                <tr key={m.id}>
+                <tr key={m.id} style={{ opacity: m.paid ? 0.6 : 1 }}>
+                  <td>
+                    {m.consumption === null ? (
+                      <span className="badge badge-blue">Inicial</span>
+                    ) : (
+                      <label className="paid-toggle" title={m.paid ? 'Marcar como no pagado' : 'Marcar como pagado'}>
+                        <input
+                          type="checkbox"
+                          checked={m.paid}
+                          onChange={() => handleTogglePaid(m.id, m.paid)}
+                        />
+                        <span className={`paid-label ${m.paid ? 'paid' : 'unpaid'}`}>
+                          {m.paid ? '✓ Pagado' : 'Sin pagar'}
+                        </span>
+                      </label>
+                    )}
+                  </td>
                   <td style={{ fontWeight: 600 }}>{aptName(m.apartmentId)}</td>
                   <td>{MONTHS[m.month-1]}</td>
                   <td>{m.year}</td>
@@ -361,7 +425,7 @@ export default function Home() {
                   <td>
                     {m.consumption !== null
                       ? <span className="badge badge-amber">+{m.consumption.toLocaleString()} kWh</span>
-                      : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Inicial</span>}
+                      : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>}
                   </td>
                   {settings.tariff > 0 && (
                     <td style={{ fontWeight: 600, color: 'var(--success)' }}>
@@ -373,7 +437,7 @@ export default function Home() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={7} className="empty-state">Sin resultados con los filtros actuales.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8} className="empty-state">Sin resultados con los filtros actuales.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -399,6 +463,28 @@ export default function Home() {
               <input type="text" id="aptName" className="form-input" placeholder="Ej. Apto 1A, Bodega, Local 3"
                 value={newAptName} onChange={e => setNewAptName(e.target.value)} required />
             </div>
+            <div className="form-group">
+              <label htmlFor="initReading">
+                Medición Inicial kWh <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(opcional)</span>
+              </label>
+              <input type="number" id="initReading" className="form-input" placeholder="Ej. 85000"
+                value={initialReading} onChange={e => setInitialReading(e.target.value)} step="0.01" />
+            </div>
+            {initialReading.trim() !== '' && (
+              <div className="grid-2" style={{ gap: '1rem' }}>
+                <div className="form-group">
+                  <label htmlFor="aptYear">Año inicial</label>
+                  <input type="number" id="aptYear" className="form-input" value={aptYear}
+                    onChange={e => setAptYear(+e.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="aptMonth">Mes inicial</label>
+                  <select id="aptMonth" className="form-input" value={aptMonth} onChange={e => setAptMonth(+e.target.value)}>
+                    {MONTHS.map((m,i) => <option key={m} value={i+1} style={{ background: '#0a0f1e' }}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
             <button type="submit" className="btn btn-primary btn-full">Añadir Apartamento</button>
           </form>
         </div>
@@ -467,8 +553,8 @@ export default function Home() {
               </div>
             </div>
             <p style={{ marginTop: '1rem' }}>
-              Los datos se guardan localmente en archivos CSV dentro de la carpeta{' '}
-              <code style={{ background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: '4px' }}>/data</code>.
+              Los datos están sincronizados en tiempo real y se almacenan de forma segura en la
+              <strong style={{ color: 'var(--text)' }}> nube mediante MongoDB</strong>.
             </p>
           </div>
         </div>
@@ -477,15 +563,14 @@ export default function Home() {
   );
 
   const TABS: Record<Tab, React.ReactNode> = {
-    registro: <TabRegistro />,
-    historial: <TabHistorial />,
-    apartamentos: <TabApartamentos />,
-    ajustes: <TabAjustes />,
+    registro: TabRegistro(),
+    historial: TabHistorial(),
+    apartamentos: TabApartamentos(),
+    ajustes: TabAjustes(),
   };
 
   return (
     <div className="app-shell">
-      {/* Mobile top bar */}
       <header className="mobile-header no-print">
         <div className="mobile-header-title">⚡ Kilovatio</div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menú">
@@ -497,7 +582,7 @@ export default function Home() {
         </button>
       </header>
 
-      <Sidebar />
+      {Sidebar()}
 
       <main className="main-content">
         {loading
