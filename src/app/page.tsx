@@ -29,7 +29,7 @@ interface Settings {
   tariff: number;
 }
 
-type Tab = 'registro' | 'historial' | 'pagos' | 'apartamentos' | 'ajustes';
+type Tab = 'registro' | 'historial' | 'pagos' | 'atencion' | 'apartamentos' | 'ajustes';
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -37,6 +37,7 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'registro',      label: 'Registro',      icon: '✏️' },
   { id: 'historial',     label: 'Historial',      icon: '📊' },
   { id: 'pagos',         label: 'Pagos',          icon: '💵' },
+  { id: 'atencion',      label: 'Atención',       icon: '⚠️' },
   { id: 'apartamentos',  label: 'Apartamentos',   icon: '🏠' },
   { id: 'ajustes',       label: 'Ajustes',        icon: '⚙️' },
 ];
@@ -187,6 +188,7 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
 
   // Apartamentos
+  const [editingAptId, setEditingAptId] = useState<string | null>(null);
   const [newAptName, setNewAptName] = useState('');
   const [newAptMeter, setNewAptMeter] = useState('');
   const [newAptPaymentDate, setNewAptPaymentDate] = useState('');
@@ -294,6 +296,73 @@ export default function Home() {
     }
   }, [unpaidForApt]);
 
+  // ── Alerta: Necesita Atención ─────────────────────────────────────────────
+  const attentionApts = useMemo(() => {
+    // Tomar base del tiempo actual: 17 de Julio de 2026 (local state o new Date())
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1; // 1-12
+    const curDay = now.getDate();
+
+    return apartments.map(a => {
+      // Intentar buscar números en paymentDate
+      const dayText = (a.paymentDate || '').match(/\d+/)?.[0];
+      const paymentDay = dayText ? parseInt(dayText, 10) : 1; // Por defecto el día 1
+
+      // Determinar período requerido de medición
+      // Si el día de hoy ya es igual o mayor al de pago, la del mes actual ya debe estar hecha
+      // Si es menor, la última obligatoria es la del mes anterior
+      let reqYear = curYear;
+      let reqMonth = curMonth;
+      if (curDay < paymentDay) {
+        reqMonth = curMonth - 1;
+        if (reqMonth === 0) {
+          reqMonth = 12;
+          reqYear = curYear - 1;
+        }
+      }
+
+      const aptMeasList = measurements.filter(m => m.apartmentId === a.id);
+      if (aptMeasList.length === 0) {
+        return {
+          apartment: a,
+          needsAttention: true,
+          reason: 'Falta configurar medición inicial / ninguna registrada',
+          monthsLate: 2,
+          lastMeasurementText: 'Sin registros'
+        };
+      }
+
+      // Medición más reciente
+      const sortedMeas = [...aptMeasList].sort((x, y) => x.year !== y.year ? y.year - x.year : y.month - x.month);
+      const lastMeas = sortedMeas[0];
+
+      const reqTotalMonths = reqYear * 12 + reqMonth;
+      const lastTotalMonths = lastMeas.year * 12 + lastMeas.month;
+      const diff = reqTotalMonths - lastTotalMonths;
+
+      if (diff > 0) {
+        return {
+          apartment: a,
+          needsAttention: true,
+          reason: diff === 1 ? 'Lleva 1 mes sin registros de consumo' : `Lleva ${diff} meses sin registros de consumo`,
+          monthsLate: diff,
+          lastMeasurementText: `${MONTHS[lastMeas.month - 1]} ${lastMeas.year} (Lectura: ${lastMeas.reading} kWh)`
+        };
+      }
+
+      return {
+        apartment: a,
+        needsAttention: false,
+        reason: 'Al día',
+        monthsLate: 0,
+        lastMeasurementText: `${MONTHS[lastMeas.month - 1]} ${lastMeas.year}`
+      };
+    }).filter(item => item.needsAttention);
+  }, [apartments, measurements]);
+
+  const attentionCount = attentionApts.length;
+
   const aptName = (id: string) => apartments.find(a => a.id === id)?.name ?? '—';
   const aptCount = (id: string) => measurements.filter(m => m.apartmentId === id).length;
 
@@ -332,42 +401,80 @@ export default function Home() {
     }
   }, [pendingReceipt, processed]);
 
-  async function handleCreateApt(e: React.FormEvent) {
+  async function handleCreateOrEditApt(e: React.FormEvent) {
     e.preventDefault();
     if (!newAptName.trim()) return;
-    const res = await fetch(`${API_URL}/api/apartments`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: newAptName.trim(),
-        meter: newAptMeter.trim(),
-        paymentDate: newAptPaymentDate.trim()
-      }),
-    });
-    if (res.ok) {
-      const apt = await res.json();
-      if (initialReading.trim() !== '') {
-        await fetch(`${API_URL}/api/measurements`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apartmentId: apt.id, year: aptYear, month: aptMonth, reading: parseFloat(initialReading) }),
-        });
+
+    if (editingAptId) {
+      // MODE: EDIT
+      const res = await fetch(`${API_URL}/api/apartments/${editingAptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newAptName.trim(),
+          meter: newAptMeter.trim(),
+          paymentDate: newAptPaymentDate.trim()
+        }),
+      });
+      if (res.ok) {
+        setEditingAptId(null);
+        setNewAptName('');
+        setNewAptMeter('');
+        setNewAptPaymentDate('');
+        await fetchAll();
       }
-      setNewAptName('');
-      setNewAptMeter('');
-      setNewAptPaymentDate('');
-      setInitialReading('');
-      await fetchAll();
+    } else {
+      // MODE: CREATE NEW
+      const res = await fetch(`${API_URL}/api/apartments`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newAptName.trim(),
+          meter: newAptMeter.trim(),
+          paymentDate: newAptPaymentDate.trim()
+        }),
+      });
+      if (res.ok) {
+        const apt = await res.json();
+        if (initialReading.trim() !== '') {
+          await fetch(`${API_URL}/api/measurements`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apartmentId: apt.id, year: aptYear, month: aptMonth, reading: parseFloat(initialReading) }),
+          });
+        }
+        setNewAptName('');
+        setNewAptMeter('');
+        setNewAptPaymentDate('');
+        setInitialReading('');
+        await fetchAll();
+      }
     }
+  }
+
+  function handleEditClick(apt: Apartment) {
+    setEditingAptId(apt.id);
+    setNewAptName(apt.name);
+    setNewAptMeter(apt.meter || '');
+    setNewAptPaymentDate(apt.paymentDate || '');
+    setInitialReading('');
+  }
+
+  function handleCancelEdit() {
+    setEditingAptId(null);
+    setNewAptName('');
+    setNewAptMeter('');
+    setNewAptPaymentDate('');
+    setInitialReading('');
   }
 
   async function handleDeleteApt(id: string) {
     if (!confirm('¿Eliminar este apartamento y todo su historial?')) return;
-    await fetch(`${API_URL}/api/apartments?id=${id}`, { method: 'DELETE' });
+    await fetch(`${API_URL}/api/apartments/${id}`, { method: 'DELETE' });
     await fetchAll();
   }
 
   async function handleDeleteMeas(id: string) {
     if (!confirm('¿Eliminar esta medición?')) return;
-    await fetch(`${API_URL}/api/measurements?id=${id}`, { method: 'DELETE' });
+    await fetch(`${API_URL}/api/measurements/${id}`, { method: 'DELETE' });
     await fetchAll();
   }
 
@@ -388,7 +495,6 @@ export default function Home() {
     if (!selectedMeasId) return;
     setPaying(true);
     try {
-      // Toggle to paid
       const res = await fetch(`${API_URL}/api/measurements/${selectedMeasId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paid: true }),
@@ -431,6 +537,9 @@ export default function Home() {
               <span style={{ flex: 1, textAlign: 'left' }}>{n.label}</span>
               {n.id === 'pagos' && unpaidCount > 0 && (
                 <span className="nav-badge">{unpaidCount}</span>
+              )}
+              {n.id === 'atencion' && attentionCount > 0 && (
+                <span className="nav-badge" style={{ background: attentionApts.some(x => x.monthsLate >= 2) ? 'var(--danger)' : 'var(--warning)', color: '#000' }}>{attentionCount}</span>
               )}
             </button>
           ))}
@@ -763,6 +872,74 @@ export default function Home() {
     </div>
   );
 
+  // ── Tab: Atención ────────────────────────────────────────────────────────
+  const TabAtencion = () => (
+    <div className="fade-in">
+      <div className="page-header">
+        <div>
+          <div className="page-title">⚠️ Requiere Atención</div>
+          <div className="page-subtitle">Monitoreo de medidores sin lecturas registradas</div>
+        </div>
+      </div>
+
+      <div className="glass">
+        <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', color: '#fca5a5', padding: '1rem 1.25rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.9rem', lineHeight: 1.5 }}>
+          📢 <strong>Nota de uso:</strong> Esta página muestra únicamente las unidades que adeudan registro de medición para el mes en curso (o anteriores) de acuerdo a sus fechas programadas. <strong>No puedes modificar datos aquí.</strong> Para registrar una nueva medición, ve a la pestaña <strong>Registro</strong>.
+        </div>
+
+        {attentionApts.length === 0 ? (
+          <div className="empty-state" style={{ padding: '3.5rem', color: 'var(--success)' }}>
+            <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '1rem' }}>🎉</span>
+            <strong>¡Excelente! Todos los medidores tienen sus lecturas al día.</strong>
+          </div>
+        ) : (
+          <div className="apt-list">
+            {attentionApts.map(item => {
+              const isTwoMonthsOrMore = item.monthsLate >= 2;
+              return (
+                <div key={item.apartment.id} className="apt-card" style={{ borderLeft: `5px solid ${isTwoMonthsOrMore ? 'var(--danger)' : 'var(--warning)'}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div className="apt-card-name" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{item.apartment.name}</span>
+                      {item.apartment.meter && (
+                        <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.08)', padding: '0.15rem 0.5rem', borderRadius: '4px', color: 'var(--text-muted)' }}>
+                          Medidor: {item.apartment.meter}
+                        </span>
+                      )}
+                      {isTwoMonthsOrMore && (
+                        <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', background: 'rgba(239,68,68,0.2)', border: '1px solid var(--danger)', color: '#fca5a5', borderRadius: '4px', fontWeight: 700 }}>
+                          URGENTE: +2 MESES SIN MEDIR
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div style={{ marginTop: '0.5rem', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                      <div>📅 <strong>Fecha programada:</strong> {item.apartment.paymentDate || 'Día 1 del mes'}</div>
+                      <div>📡 <strong>Última lectura guardada:</strong> {item.lastMeasurementText}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'right' }}>
+                    <span className="badge" style={{
+                      background: isTwoMonthsOrMore ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)',
+                      color: isTwoMonthsOrMore ? '#fca5a5' : '#fcd34d',
+                      border: `1px solid ${isTwoMonthsOrMore ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                      padding: '0.5rem 1rem',
+                      fontSize: '0.85rem',
+                      fontWeight: 700
+                    }}>
+                      ⚠️ {item.reason}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   // ── Tab: Apartamentos ─────────────────────────────────────────────────────
   const TabApartamentos = () => (
     <div className="fade-in">
@@ -774,8 +951,8 @@ export default function Home() {
       </div>
       <div className="grid-2">
         <div className="glass">
-          <div className="section-title">Nuevo Apartamento</div>
-          <form onSubmit={handleCreateApt}>
+          <div className="section-title">{editingAptId ? 'Editar Apartamento' : 'Nuevo Apartamento'}</div>
+          <form onSubmit={handleCreateOrEditApt}>
             <div className="form-group">
               <label htmlFor="aptName">Nombre del apartamento / medidor</label>
               <input type="text" id="aptName" className="form-input" placeholder="Ej. Apto 1A, Bodega, Local 3"
@@ -791,28 +968,44 @@ export default function Home() {
               <input type="text" id="paymentDateDay" className="form-input" placeholder="Ej. Los 5 de cada mes, Día 10"
                 value={newAptPaymentDate} onChange={e => setNewAptPaymentDate(e.target.value)} />
             </div>
-            <div className="form-group">
-              <label htmlFor="initReading">
-                Medición Inicial kWh <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(opcional)</span>
-              </label>
-              <input type="number" id="initReading" className="form-input" placeholder="Ej. 85000"
-                value={initialReading} onChange={e => setInitialReading(e.target.value)} step="0.01" />
-            </div>
-            {initialReading.trim() !== '' && (
-              <div className="grid-2" style={{ gap: '1rem' }}>
+            
+            {/* Show initial reading configuration only when creating a new apartment */}
+            {!editingAptId && (
+              <>
                 <div className="form-group">
-                  <label htmlFor="aptYear">Año inicial</label>
-                  <input type="number" id="aptYear" className="form-input" value={aptYear} onChange={e => setAptYear(+e.target.value)} />
+                  <label htmlFor="initReading">
+                    Medición Inicial kWh <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(opcional)</span>
+                  </label>
+                  <input type="number" id="initReading" className="form-input" placeholder="Ej. 85000"
+                    value={initialReading} onChange={e => setInitialReading(e.target.value)} step="0.01" />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="aptMonth">Mes inicial</label>
-                  <select id="aptMonth" className="form-input" value={aptMonth} onChange={e => setAptMonth(+e.target.value)}>
-                    {MONTHS.map((m, i) => <option key={m} value={i + 1} style={{ background: '#0a0f1e' }}>{m}</option>)}
-                  </select>
-                </div>
-              </div>
+                {initialReading.trim() !== '' && (
+                  <div className="grid-2" style={{ gap: '1rem' }}>
+                    <div className="form-group">
+                      <label htmlFor="aptYear">Año inicial</label>
+                      <input type="number" id="aptYear" className="form-input" value={aptYear} onChange={e => setAptYear(+e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="aptMonth">Mes inicial</label>
+                      <select id="aptMonth" className="form-input" value={aptMonth} onChange={e => setAptMonth(+e.target.value)}>
+                        {MONTHS.map((m, i) => <option key={m} value={i + 1} style={{ background: '#0a0f1e' }}>{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-            <button type="submit" className="btn btn-primary btn-full" style={{ marginTop: '0.5rem' }}>Añadir Apartamento</button>
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+              <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                {editingAptId ? '💾 Guardar Cambios' : 'Añadir Apartamento'}
+              </button>
+              {editingAptId && (
+                <button type="button" className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text)' }} onClick={handleCancelEdit}>
+                  Cancelar
+                </button>
+              )}
+            </div>
           </form>
         </div>
 
@@ -825,16 +1018,27 @@ export default function Home() {
                 {apartments.map(a => (
                   <div key={a.id} className="apt-card">
                     <div style={{ flex: 1 }}>
-                      <div className="apt-card-name" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        {a.name}
-                        {a.meter && <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.08)', padding: '0.1rem 0.4rem', borderRadius: '4px', color: 'var(--text-muted)' }}>Num. medidor: {a.meter}</span>}
+                      <div className="apt-card-name" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span>{a.name}</span>
+                        {a.meter && (
+                          <span style={{ fontSize: '0.72rem', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.2)', padding: '0.1rem 0.4rem', borderRadius: '4px', color: 'var(--primary-hover)' }}>
+                            Medidor: {a.meter}
+                          </span>
+                        )}
                       </div>
                       <div className="apt-card-meta">
                         {aptCount(a.id)} medición{aptCount(a.id) !== 1 ? 'es' : ''}
                         {a.paymentDate && ` · Pago: ${a.paymentDate}`}
                       </div>
                     </div>
-                    <button className="btn btn-danger" onClick={() => handleDeleteApt(a.id)}>Eliminar</button>
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button className="btn btn-success" style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem' }} onClick={() => handleEditClick(a)}>
+                        ✏️ Editar
+                      </button>
+                      <button className="btn btn-danger" onClick={() => handleDeleteApt(a.id)}>
+                        Eliminar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -899,32 +1103,35 @@ export default function Home() {
     registro: TabRegistro(),
     historial: TabHistorial(),
     pagos: TabPagos(),
+    atencion: TabAtencion(),
     apartamentos: TabApartamentos(),
     ajustes: TabAjustes(),
   };
 
   return (
-    <div className="app-shell">
-      <header className="mobile-header no-print">
-        <div className="mobile-header-title">⚡ Kilovatio</div>
-        <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menú">
-          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="2" y1="5" x2="18" y2="5" />
-            <line x1="2" y1="10" x2="18" y2="10" />
-            <line x1="2" y1="15" x2="18" y2="15" />
-          </svg>
-        </button>
-      </header>
+    <>
+      <div className="app-shell">
+        <header className="mobile-header no-print">
+          <div className="mobile-header-title">⚡ Kilovatio</div>
+          <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menú">
+            <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="2" y1="5" x2="18" y2="5" />
+              <line x1="2" y1="10" x2="18" y2="10" />
+              <line x1="2" y1="15" x2="18" y2="15" />
+            </svg>
+          </button>
+        </header>
 
-      {Sidebar()}
+        {Sidebar()}
 
-      <main className="main-content">
-        {loading
-          ? <div className="glass empty-state">Cargando datos…</div>
-          : TABS[tab]}
-      </main>
+        <main className="main-content">
+          {loading
+            ? <div className="glass empty-state">Cargando datos…</div>
+            : TABS[tab]}
+        </main>
+      </div>
 
-      {/* Receipt modal */}
+      {/* Portal / Receipt modal (Rendered outside app-shell hierarchy) */}
       {receipt && (
         <ReceiptModal
           measurement={receipt}
@@ -933,6 +1140,6 @@ export default function Home() {
           onClose={() => setReceipt(null)}
         />
       )}
-    </div>
+    </>
   );
 }
