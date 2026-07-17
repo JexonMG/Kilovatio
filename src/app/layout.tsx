@@ -8,11 +8,6 @@ export const metadata: Metadata = {
   title: "Kilovatio – Control de Consumo Eléctrico",
   description:
     "Registra y analiza el consumo de kilowatios-hora por mes y apartamento.",
-  icons: {
-    icon: "/icon.png",
-    shortcut: "/icon.png",
-    apple: "/icon.png",
-  },
 };
 
 export default function RootLayout({
