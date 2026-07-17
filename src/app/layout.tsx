@@ -2,24 +2,17 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-family",
-});
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Kilovatio - Control de Consumo",
-  description: "Registro de mediciones de Kilowats hora por mes.",
+  title: "Kilovatio – Control de Consumo Eléctrico",
+  description: "Registra y analiza el consumo de kilowatios-hora por mes y apartamento.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={inter.variable}>
-      <body>{children}</body>
+    <html lang="es">
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }

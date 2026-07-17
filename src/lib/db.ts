@@ -25,147 +25,74 @@ const measurementsFile = path.join(dbDir, 'measurements.csv');
 const apartmentsFile = path.join(dbDir, 'apartments.csv');
 const settingsFile = path.join(dbDir, 'settings.json');
 
-// Initialize the CSV and JSON files if they don't exist
 export function initDb() {
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
-  if (!fs.existsSync(measurementsFile)) {
-    fs.writeFileSync(measurementsFile, 'id,apartmentId,year,month,reading,createdAt\n', 'utf-8');
-  }
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+  if (!fs.existsSync(measurementsFile)) fs.writeFileSync(measurementsFile, 'id,apartmentId,year,month,reading,createdAt\n', 'utf-8');
   if (!fs.existsSync(apartmentsFile)) {
     fs.writeFileSync(apartmentsFile, 'id,name,createdAt\n', 'utf-8');
-    // Create a default apartment to avoid breaking existing logic
-    saveApartment('Principal');
+    const id = crypto.randomUUID();
+    fs.appendFileSync(apartmentsFile, `${id},Principal,${new Date().toISOString()}\n`, 'utf-8');
   }
-  if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(settingsFile, JSON.stringify({ tariff: 0 }), 'utf-8');
-  }
+  if (!fs.existsSync(settingsFile)) fs.writeFileSync(settingsFile, JSON.stringify({ tariff: 0 }), 'utf-8');
 }
 
-// ---- SETTINGS ----
 export function getSettings(): Settings {
   initDb();
-  const content = fs.readFileSync(settingsFile, 'utf-8');
-  return JSON.parse(content);
+  return JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
 }
 
-export function saveSettings(settings: Settings): Settings {
+export function saveSettings(s: Settings): Settings {
   initDb();
-  fs.writeFileSync(settingsFile, JSON.stringify(settings), 'utf-8');
-  return settings;
+  fs.writeFileSync(settingsFile, JSON.stringify(s), 'utf-8');
+  return s;
 }
 
-// ---- APARTMENTS ----
 export function getApartments(): Apartment[] {
   initDb();
-  const content = fs.readFileSync(apartmentsFile, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim() !== '');
-  
-  const dataLines = lines.slice(1);
-  return dataLines.map(line => {
-    const [id, ...nameParts] = line.split(',');
-    const createdAt = nameParts.pop() || '';
-    const name = nameParts.join(','); // Join back in case name had commas
+  const lines = fs.readFileSync(apartmentsFile, 'utf-8').split('\n').filter(Boolean).slice(1);
+  return lines.map(line => {
+    const parts = line.split(',');
+    const id = parts[0];
+    const createdAt = parts[parts.length - 1];
+    const name = parts.slice(1, parts.length - 1).join(',');
     return { id, name, createdAt };
   });
 }
 
 export function saveApartment(name: string): Apartment {
   initDb();
-  const newApt: Apartment = {
-    id: crypto.randomUUID(),
-    name,
-    createdAt: new Date().toISOString()
-  };
-  const line = `${newApt.id},${newApt.name},${newApt.createdAt}\n`;
-  fs.appendFileSync(apartmentsFile, line, 'utf-8');
-  return newApt;
+  const apt: Apartment = { id: crypto.randomUUID(), name, createdAt: new Date().toISOString() };
+  fs.appendFileSync(apartmentsFile, `${apt.id},${apt.name},${apt.createdAt}\n`, 'utf-8');
+  return apt;
 }
 
 export function deleteApartment(id: string) {
-  const apartments = getApartments();
-  const filtered = apartments.filter(a => a.id !== id);
-  const header = 'id,name,createdAt\n';
-  const lines = filtered.map(a => `${a.id},${a.name},${a.createdAt}\n`).join('');
-  fs.writeFileSync(apartmentsFile, header + lines, 'utf-8');
-
-  // Cascade delete measurements
-  const measurements = getMeasurements();
-  const filteredMeasurements = measurements.filter(m => m.apartmentId !== id);
-  const mHeader = 'id,apartmentId,year,month,reading,createdAt\n';
-  const mLines = filteredMeasurements.map(m => `${m.id},${m.apartmentId},${m.year},${m.month},${m.reading},${m.createdAt}\n`).join('');
-  fs.writeFileSync(measurementsFile, mHeader + mLines, 'utf-8');
+  const filtered = getApartments().filter(a => a.id !== id);
+  fs.writeFileSync(apartmentsFile, 'id,name,createdAt\n' + filtered.map(a => `${a.id},${a.name},${a.createdAt}\n`).join(''), 'utf-8');
+  const meas = getMeasurements().filter(m => m.apartmentId !== id);
+  fs.writeFileSync(measurementsFile, 'id,apartmentId,year,month,reading,createdAt\n' + meas.map(m => `${m.id},${m.apartmentId},${m.year},${m.month},${m.reading},${m.createdAt}\n`).join(''), 'utf-8');
 }
 
-// ---- MEASUREMENTS ----
 export function getMeasurements(apartmentIdFilter?: string): Measurement[] {
   initDb();
-  const content = fs.readFileSync(measurementsFile, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim() !== '');
-  
-  const dataLines = lines.slice(1);
-  
-  let measurements: Measurement[] = dataLines.map(line => {
-    // Check if the old format (id,year,month,reading,createdAt) is used by checking column count
+  const lines = fs.readFileSync(measurementsFile, 'utf-8').split('\n').filter(Boolean).slice(1);
+  let data: Measurement[] = lines.map(line => {
     const parts = line.split(',');
-    
-    let id, apartmentId, year, month, reading, createdAt;
-    
-    if (parts.length === 6) {
-      [id, apartmentId, year, month, reading, createdAt] = parts;
-    } else {
-      // Legacy format conversion
-      [id, year, month, reading, createdAt] = parts;
-      const apts = getApartments();
-      apartmentId = apts.length > 0 ? apts[0].id : 'legacy';
-    }
-
-    return {
-      id,
-      apartmentId,
-      year: parseInt(year, 10),
-      month: parseInt(month, 10),
-      reading: parseFloat(reading),
-      createdAt
-    };
+    const [id, apartmentId, year, month, reading, createdAt] = parts.length >= 6 ? parts : [parts[0], getApartments()[0]?.id ?? '', parts[1], parts[2], parts[3], parts[4]];
+    return { id, apartmentId, year: +year, month: +month, reading: +reading, createdAt };
   });
-
-  if (apartmentIdFilter) {
-    measurements = measurements.filter(m => m.apartmentId === apartmentIdFilter);
-  }
-
-  // Sort by year ascending, then month ascending
-  return measurements.sort((a, b) => {
-    if (a.year !== b.year) return a.year - b.year;
-    return a.month - b.month;
-  });
+  if (apartmentIdFilter) data = data.filter(m => m.apartmentId === apartmentIdFilter);
+  return data.sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month);
 }
 
-export function saveMeasurement(measurement: Omit<Measurement, 'id' | 'createdAt'>): Measurement {
+export function saveMeasurement(m: Omit<Measurement, 'id' | 'createdAt'>): Measurement {
   initDb();
-  
-  const newMeasurement: Measurement = {
-    id: crypto.randomUUID(),
-    apartmentId: measurement.apartmentId,
-    year: measurement.year,
-    month: measurement.month,
-    reading: measurement.reading,
-    createdAt: new Date().toISOString()
-  };
-
-  const line = `${newMeasurement.id},${newMeasurement.apartmentId},${newMeasurement.year},${newMeasurement.month},${newMeasurement.reading},${newMeasurement.createdAt}\n`;
-  fs.appendFileSync(measurementsFile, line, 'utf-8');
-  
-  return newMeasurement;
+  const meas: Measurement = { id: crypto.randomUUID(), ...m, createdAt: new Date().toISOString() };
+  fs.appendFileSync(measurementsFile, `${meas.id},${meas.apartmentId},${meas.year},${meas.month},${meas.reading},${meas.createdAt}\n`, 'utf-8');
+  return meas;
 }
 
 export function deleteMeasurement(id: string) {
-  const measurements = getMeasurements(); // gets all because no filter
-  const filtered = measurements.filter(m => m.id !== id);
-  
-  const header = 'id,apartmentId,year,month,reading,createdAt\n';
-  const lines = filtered.map(m => `${m.id},${m.apartmentId},${m.year},${m.month},${m.reading},${m.createdAt}\n`).join('');
-  
-  fs.writeFileSync(measurementsFile, header + lines, 'utf-8');
+  const filtered = getMeasurements().filter(m => m.id !== id);
+  fs.writeFileSync(measurementsFile, 'id,apartmentId,year,month,reading,createdAt\n' + filtered.map(m => `${m.id},${m.apartmentId},${m.year},${m.month},${m.reading},${m.createdAt}\n`).join(''), 'utf-8');
 }
