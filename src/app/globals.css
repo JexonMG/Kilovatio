@@ -252,13 +252,20 @@ tbody tr:hover { background: rgba(255,255,255,0.015); }
 
 /* ─── PRINT ─── */
 @media print {
+  @page { margin: 1cm; size: auto; }
   .sidebar, .mobile-header, .no-print { display: none !important; }
-  .main-content { margin-left: 0; padding: 0; }
+  .app-shell { display: block; }
+  .main-content { margin-left: 0; padding: 0 !important; width: 100% !important; max-width: 100% !important; }
   body { background: white; color: black; }
-  .glass { background: white; border: none; box-shadow: none; }
+  .glass { background: white; border: none; box-shadow: none; padding: 0 !important; }
   .page-title { color: black; }
-  thead th { background: #f1f5f9; color: black; }
-  tbody td { color: black; }
+  .table-wrap { overflow: visible !important; border: none !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  thead th { background: #f1f5f9; color: black; border-bottom: 2px solid #ccc; padding: 0.5rem; }
+  tbody td { color: black; border-bottom: 1px solid #ddd; padding: 0.5rem; }
+  .badge { border: 1px solid #ccc; }
   .badge-amber { background: #fef3c7; color: #92400e; }
+  .paid-label.paid { color: #059669; }
+  .paid-label.unpaid { color: #dc2626; }
   * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 }

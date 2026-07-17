@@ -441,6 +441,25 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+
+        {filtered.length > 0 && (
+          <div style={{ textAlign: 'center', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '2px dashed var(--border)', fontSize: '1.2rem', fontWeight: 600 }}>
+            <span style={{ marginRight: '2rem', color: 'var(--text)' }}>
+              Total de Consumo:{' '}
+              <span style={{ color: 'var(--primary-hover)' }}>
+                {filtered.reduce((sum, m) => sum + (m.consumption ?? 0), 0).toLocaleString()} kWh
+              </span>
+            </span>
+            {settings.tariff > 0 && (
+              <span style={{ color: 'var(--text)' }}>
+                Total Costo:{' '}
+                <span style={{ color: 'var(--success)' }}>
+                  ${filtered.reduce((sum, m) => sum + (m.cost ?? 0), 0).toFixed(2)}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
