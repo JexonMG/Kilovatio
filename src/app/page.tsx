@@ -70,10 +70,11 @@ export default function Home() {
   async function fetchAll() {
     try {
       setLoading(true);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
       const [a, s, m] = await Promise.all([
-        fetch('/api/apartments').then(r => r.json()),
-        fetch('/api/settings').then(r => r.json()),
-        fetch('/api/measurements').then(r => r.json()),
+        fetch(`${API_URL}/api/apartments`).then(r => r.json()),
+        fetch(`${API_URL}/api/settings`).then(r => r.json()),
+        fetch(`${API_URL}/api/measurements`).then(r => r.json()),
       ]);
       setApartments(a);
       setSettings(s);
@@ -121,7 +122,8 @@ export default function Home() {
     if (!reading || !regAptId) return;
     setSubmitting(true);
     try {
-      const res = await fetch('/api/measurements', {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+      const res = await fetch(`${API_URL}/api/measurements`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apartmentId: regAptId, year, month, reading: parseFloat(reading) }),
       });
@@ -136,7 +138,8 @@ export default function Home() {
   async function handleCreateApt(e: React.FormEvent) {
     e.preventDefault();
     if (!newAptName.trim()) return;
-    const res = await fetch('/api/apartments', {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+    const res = await fetch(`${API_URL}/api/apartments`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newAptName.trim() }),
     });
@@ -145,13 +148,15 @@ export default function Home() {
 
   async function handleDeleteApt(id: string) {
     if (!confirm('¿Eliminar este apartamento y todo su historial?')) return;
-    await fetch(`/api/apartments?id=${id}`, { method: 'DELETE' });
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+    await fetch(`${API_URL}/api/apartments?id=${id}`, { method: 'DELETE' });
     await fetchAll();
   }
 
   async function handleDeleteMeas(id: string) {
     if (!confirm('¿Eliminar esta medición?')) return;
-    await fetch(`/api/measurements?id=${id}`, { method: 'DELETE' });
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+    await fetch(`${API_URL}/api/measurements?id=${id}`, { method: 'DELETE' });
     await fetchAll();
   }
 
@@ -159,7 +164,8 @@ export default function Home() {
     e.preventDefault();
     const val = parseFloat(tariffInput);
     if (isNaN(val)) return;
-    const res = await fetch('/api/settings', {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+    const res = await fetch(`${API_URL}/api/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tariff: val }),
     });
