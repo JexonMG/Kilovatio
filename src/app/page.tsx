@@ -20,6 +20,8 @@ interface ProcessedMeasurement extends Measurement {
 interface Apartment {
   id: string;
   name: string;
+  meter: string;
+  paymentDate: string;
   createdAt: string;
 }
 
@@ -27,13 +29,14 @@ interface Settings {
   tariff: number;
 }
 
-type Tab = 'registro' | 'historial' | 'apartamentos' | 'ajustes';
+type Tab = 'registro' | 'historial' | 'pagos' | 'apartamentos' | 'ajustes';
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'registro',      label: 'Registro',      icon: '✏️' },
   { id: 'historial',     label: 'Historial',      icon: '📊' },
+  { id: 'pagos',         label: 'Pagos',          icon: '💵' },
   { id: 'apartamentos',  label: 'Apartamentos',   icon: '🏠' },
   { id: 'ajustes',       label: 'Ajustes',        icon: '⚙️' },
 ];
@@ -55,16 +58,10 @@ function ReceiptModal({
 
   return (
     <>
-      {/* Overlay — hidden when printing */}
       <div className="receipt-overlay no-print" onClick={onClose} />
-
       <div className="receipt-modal">
-        {/* Screen-only close button */}
         <button className="receipt-close no-print" onClick={onClose} aria-label="Cerrar">✕</button>
-
-        {/* ── RECEIPT CONTENT ───────────────────────────── */}
         <div className="receipt-body" id="receipt-print">
-          {/* Header */}
           <div className="receipt-header">
             <div className="receipt-logo">⚡ Kilovatio</div>
             <div className="receipt-title">RECIBO DE CONSUMO ELÉCTRICO</div>
@@ -84,14 +81,13 @@ function ReceiptModal({
               <span className="receipt-meta-value">{readingDate}</span>
             </div>
             <div className="receipt-meta-row">
-              <span className="receipt-meta-label">Fecha de emisión del recibo:</span>
+              <span className="receipt-meta-label">Fecha de emisión:</span>
               <span className="receipt-meta-value">{issueDate}</span>
             </div>
           </div>
 
           <div className="receipt-divider" />
 
-          {/* Reading data */}
           <table className="receipt-table">
             <thead>
               <tr>
@@ -119,13 +115,12 @@ function ReceiptModal({
                 </>
               ) : (
                 <tr>
-                  <td colSpan={2} style={{ color: '#666', fontStyle: 'italic' }}>Lectura inicial — sin período anterior de comparación</td>
+                  <td colSpan={2} style={{ color: '#666', fontStyle: 'italic' }}>Lectura inicial — sin período anterior</td>
                 </tr>
               )}
             </tbody>
           </table>
 
-          {/* Total box */}
           {measurement.consumption !== null && tariff > 0 && (
             <div className="receipt-total-box">
               <div className="receipt-total-label">TOTAL A PAGAR</div>
@@ -136,11 +131,9 @@ function ReceiptModal({
             <div className="receipt-total-box" style={{ border: '2px dashed #999' }}>
               <div className="receipt-total-label">CONSUMO TOTAL</div>
               <div className="receipt-total-amount" style={{ color: '#1d4ed8' }}>{measurement.consumption.toLocaleString()} kWh</div>
-              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>Configura la tarifa para calcular el monto</div>
             </div>
           )}
 
-          {/* Estado */}
           <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
             <span style={{
               display: 'inline-block',
@@ -157,13 +150,11 @@ function ReceiptModal({
           </div>
 
           <div className="receipt-divider" style={{ marginTop: '1.5rem' }} />
-
           <div className="receipt-footer">
             Emitido por el sistema Kilovatio · {issueDate}
           </div>
         </div>
 
-        {/* Print button — screen only */}
         <div className="no-print" style={{ textAlign: 'center', marginTop: '1.5rem' }}>
           <button className="btn btn-primary" style={{ padding: '0.75rem 2.5rem', fontSize: '1rem' }}
             onClick={() => window.print()}>
@@ -188,7 +179,7 @@ export default function Home() {
   // Recibo abierto
   const [receipt, setReceipt] = useState<ProcessedMeasurement | null>(null);
 
-  // Registro
+  // Registro/Medición
   const [regAptId, setRegAptId] = useState('');
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -197,9 +188,17 @@ export default function Home() {
 
   // Apartamentos
   const [newAptName, setNewAptName] = useState('');
+  const [newAptMeter, setNewAptMeter] = useState('');
+  const [newAptPaymentDate, setNewAptPaymentDate] = useState('');
   const [initialReading, setInitialReading] = useState('');
   const [aptYear, setAptYear] = useState(new Date().getFullYear());
   const [aptMonth, setAptMonth] = useState(new Date().getMonth() + 1);
+
+  // Pestaña de Pagos
+  const [paymentAptId, setPaymentAptId] = useState('');
+  const [selectedMeasId, setSelectedMeasId] = useState('');
+  const [paymentDateInput, setPaymentDateInput] = useState('');
+  const [paying, setPaying] = useState(false);
 
   // Ajustes
   const [tariffInput, setTariffInput] = useState('');
@@ -213,6 +212,18 @@ export default function Home() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
+  // Effect to add/remove CSS class to body when printing receipt to avoid blank pages Chrome/Firefox
+  useEffect(() => {
+    if (receipt) {
+      document.body.classList.add('receipt-open-print');
+    } else {
+      document.body.classList.remove('receipt-open-print');
+    }
+    return () => {
+      document.body.classList.remove('receipt-open-print');
+    };
+  }, [receipt]);
+
   useEffect(() => { fetchAll(); }, []);
 
   async function fetchAll() {
@@ -223,11 +234,15 @@ export default function Home() {
         fetch(`${API_URL}/api/settings`).then(r => r.json()),
         fetch(`${API_URL}/api/measurements`).then(r => r.json()),
       ]);
-      setApartments(Array.isArray(a) ? a : []);
+      const aptsList = Array.isArray(a) ? a : [];
+      setApartments(aptsList);
       setSettings(s ?? { tariff: 0 });
       setMeasurements(Array.isArray(m) ? m : []);
       setTariffInput((s?.tariff ?? 0).toString());
-      if (Array.isArray(a) && a.length > 0) setRegAptId(prev => prev || a[0].id);
+      if (aptsList.length > 0) {
+        setRegAptId(prev => prev || aptsList[0].id);
+        setPaymentAptId(prev => prev || aptsList[0].id);
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -261,10 +276,28 @@ export default function Home() {
     return true;
   });
 
+  // Filter unpaid measurements for selected apartment in the Pagos Tab
+  const unpaidForApt = useMemo(() => {
+    return processed.filter(m => m.apartmentId === paymentAptId && !m.paid && m.consumption !== null);
+  }, [processed, paymentAptId]);
+
+  const selectedAptDetails = useMemo(() => {
+    return apartments.find(a => a.id === paymentAptId);
+  }, [apartments, paymentAptId]);
+
+  // Set default selected measurement when apartment changes in Pagos
+  useEffect(() => {
+    if (unpaidForApt.length > 0) {
+      setSelectedMeasId(unpaidForApt[0].id);
+    } else {
+      setSelectedMeasId('');
+    }
+  }, [unpaidForApt]);
+
   const aptName = (id: string) => apartments.find(a => a.id === id)?.name ?? '—';
   const aptCount = (id: string) => measurements.filter(m => m.apartmentId === id).length;
 
-  // Sync receipt data when measurements refresh (for paid toggle to reflect immediately)
+  // Sync receipt details if data updates in background
   useEffect(() => {
     if (receipt) {
       const updated = processed.find(m => m.id === receipt.id);
@@ -285,26 +318,7 @@ export default function Home() {
       if (res.ok) {
         if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1);
         await fetchAll();
-        // After fetchAll, find the newly created measurement and show receipt
-        setMeasurements(prev => {
-          const updated = [...prev];
-          return updated;
-        });
-        // Open receipt after data refreshes — use a tiny delay to let state settle
-        setTimeout(() => {
-          setMeasurements(prev => {
-            const newMeas = [...prev].sort((a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            )[0];
-            if (newMeas) {
-              // find in processed
-              setReceipt(p => p); // trigger re-render; actual receipt set below
-            }
-            return prev;
-          });
-        }, 300);
         setReading('');
-        // Flag to open receipt after next processed update
         setPendingReceipt(true);
       }
     } finally { setSubmitting(false); }
@@ -323,7 +337,11 @@ export default function Home() {
     if (!newAptName.trim()) return;
     const res = await fetch(`${API_URL}/api/apartments`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newAptName.trim() }),
+      body: JSON.stringify({
+        name: newAptName.trim(),
+        meter: newAptMeter.trim(),
+        paymentDate: newAptPaymentDate.trim()
+      }),
     });
     if (res.ok) {
       const apt = await res.json();
@@ -333,7 +351,10 @@ export default function Home() {
           body: JSON.stringify({ apartmentId: apt.id, year: aptYear, month: aptMonth, reading: parseFloat(initialReading) }),
         });
       }
-      setNewAptName(''); setInitialReading('');
+      setNewAptName('');
+      setNewAptMeter('');
+      setNewAptPaymentDate('');
+      setInitialReading('');
       await fetchAll();
     }
   }
@@ -359,6 +380,25 @@ export default function Home() {
       });
     } catch {
       setMeasurements(prev => prev.map(m => m.id === id ? { ...m, paid: current } : m));
+    }
+  }
+
+  async function handleRegisterPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedMeasId) return;
+    setPaying(true);
+    try {
+      // Toggle to paid
+      const res = await fetch(`${API_URL}/api/measurements/${selectedMeasId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paid: true }),
+      });
+      if (res.ok) {
+        setPaymentDateInput('');
+        await fetchAll();
+      }
+    } finally {
+      setPaying(false);
     }
   }
 
@@ -389,7 +429,7 @@ export default function Home() {
             <button key={n.id} className={`nav-item ${tab === n.id ? 'active' : ''}`} onClick={() => navigate(n.id)}>
               <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>{n.icon}</span>
               <span style={{ flex: 1, textAlign: 'left' }}>{n.label}</span>
-              {n.id === 'historial' && unpaidCount > 0 && (
+              {n.id === 'pagos' && unpaidCount > 0 && (
                 <span className="nav-badge">{unpaidCount}</span>
               )}
             </button>
@@ -561,12 +601,9 @@ export default function Home() {
                     {m.consumption === null ? (
                       <span className="badge badge-blue">Inicial</span>
                     ) : (
-                      <label className="paid-toggle" title={m.paid ? 'Marcar como no pagado' : 'Marcar como pagado'}>
-                        <input type="checkbox" checked={m.paid} onChange={() => handleTogglePaid(m.id, m.paid)} />
-                        <span className={`paid-label ${m.paid ? 'paid' : 'unpaid'}`}>
-                          {m.paid ? '✓ Pagado' : 'Sin pagar'}
-                        </span>
-                      </label>
+                      <span className={`paid-label ${m.paid ? 'paid' : 'unpaid'}`}>
+                        {m.paid ? '✓ Pagado' : 'Sin pagar'}
+                      </span>
                     )}
                   </td>
                   <td style={{ fontWeight: 600 }}>{aptName(m.apartmentId)}</td>
@@ -621,6 +658,111 @@ export default function Home() {
     </div>
   );
 
+  // ── Tab: Pagos ─────────────────────────────────────────────────────────────
+  const TabPagos = () => (
+    <div className="fade-in">
+      <div className="page-header">
+        <div>
+          <div className="page-title">Control de Pagos</div>
+          <div className="page-subtitle">Registrar recaudación eléctrica</div>
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <div className="glass">
+          <div className="section-title">Buscar Apartamento</div>
+          {apartments.length === 0 ? (
+            <p className="empty-state">No hay apartamentos creados.</p>
+          ) : (
+            <form onSubmit={handleRegisterPayment}>
+              <div className="form-group">
+                <label htmlFor="paymentApt">Apartamento</label>
+                <select id="paymentApt" className="form-input" value={paymentAptId} onChange={e => setPaymentAptId(e.target.value)}>
+                  {apartments.map(a => <option key={a.id} value={a.id} style={{ background: '#0a0f1e' }}>{a.name}</option>)}
+                </select>
+              </div>
+
+              {selectedAptDetails && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', border: '1px solid var(--border)' }}>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Medidor asignado</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text)' }}>{selectedAptDetails.meter || '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Fecha programada de pago</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--primary-hover)' }}>{selectedAptDetails.paymentDate || 'No definida'}</div>
+                  </div>
+                </div>
+              )}
+
+              {unpaidForApt.length === 0 ? (
+                <div className="info-box" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', color: '#6ee7b7', textAlign: 'center', fontSize: '1.1rem', padding: '1.5rem', borderRadius: '8px', fontStyle: 'italic', fontWeight: 600 }}>
+                  🎉 Pagos al dia
+                </div>
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="unpaidMeas">Seleccione Mes Pendiente</label>
+                    <select id="unpaidMeas" className="form-input" value={selectedMeasId} onChange={e => setSelectedMeasId(e.target.value)}>
+                      {unpaidForApt.map(m => {
+                        const costText = m.cost !== null ? ` ($${m.cost.toFixed(2)})` : '';
+                        return (
+                          <option key={m.id} value={m.id} style={{ background: '#0a0f1e' }}>
+                            {MONTHS[m.month - 1]} {m.year} · +{m.consumption} kWh{costText}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="paymentDate">Fecha en la que pagó (Opcional)</label>
+                    <input type="text" id="paymentDate" className="form-input" placeholder="Ej. Hoy, 15 de Julio, etc." value={paymentDateInput} onChange={e => setPaymentDateInput(e.target.value)} />
+                  </div>
+
+                  <button type="submit" className="btn btn-success btn-full" disabled={paying} style={{ marginTop: '0.5rem' }}>
+                    {paying ? 'Procesando pago...' : '💵 Marcar Medicion como Pagado'}
+                  </button>
+                </>
+              )}
+            </form>
+          )}
+        </div>
+
+        <div className="glass">
+          <div className="section-title">Pendientes en este apartamento</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Consumo</th>
+                  <th>Costo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unpaidForApt.map(m => (
+                  <tr key={m.id}>
+                    <td style={{ fontWeight: 600 }}>{MONTHS[m.month - 1]} {m.year}</td>
+                    <td><span className="badge badge-amber">+{m.consumption} kWh</span></td>
+                    <td style={{ color: 'var(--success)', fontWeight: 600 }}>{m.cost !== null ? `$${m.cost.toFixed(2)}` : '—'}</td>
+                  </tr>
+                ))}
+                {unpaidForApt.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="empty-state" style={{ color: 'var(--success)' }}>
+                      No hay cobros pendientes para este apartamento.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── Tab: Apartamentos ─────────────────────────────────────────────────────
   const TabApartamentos = () => (
     <div className="fade-in">
@@ -638,6 +780,16 @@ export default function Home() {
               <label htmlFor="aptName">Nombre del apartamento / medidor</label>
               <input type="text" id="aptName" className="form-input" placeholder="Ej. Apto 1A, Bodega, Local 3"
                 value={newAptName} onChange={e => setNewAptName(e.target.value)} required />
+            </div>
+            <div className="form-group">
+              <label htmlFor="aptMeter">Medidor / Código de Medidor</label>
+              <input type="text" id="aptMeter" className="form-input" placeholder="Ej. MD-98234, Medidor Principal"
+                value={newAptMeter} onChange={e => setNewAptMeter(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label htmlFor="paymentDateDay">Fecha de Pagos</label>
+              <input type="text" id="paymentDateDay" className="form-input" placeholder="Ej. Los 5 de cada mes, Día 10"
+                value={newAptPaymentDate} onChange={e => setNewAptPaymentDate(e.target.value)} />
             </div>
             <div className="form-group">
               <label htmlFor="initReading">
@@ -660,7 +812,7 @@ export default function Home() {
                 </div>
               </div>
             )}
-            <button type="submit" className="btn btn-primary btn-full">Añadir Apartamento</button>
+            <button type="submit" className="btn btn-primary btn-full" style={{ marginTop: '0.5rem' }}>Añadir Apartamento</button>
           </form>
         </div>
 
@@ -672,9 +824,15 @@ export default function Home() {
               <div className="apt-list">
                 {apartments.map(a => (
                   <div key={a.id} className="apt-card">
-                    <div>
-                      <div className="apt-card-name">{a.name}</div>
-                      <div className="apt-card-meta">{aptCount(a.id)} medición{aptCount(a.id) !== 1 ? 'es' : ''}</div>
+                    <div style={{ flex: 1 }}>
+                      <div className="apt-card-name" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {a.name}
+                        {a.meter && <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.08)', padding: '0.1rem 0.4rem', borderRadius: '4px', color: 'var(--text-muted)' }}>Num. medidor: {a.meter}</span>}
+                      </div>
+                      <div className="apt-card-meta">
+                        {aptCount(a.id)} medición{aptCount(a.id) !== 1 ? 'es' : ''}
+                        {a.paymentDate && ` · Pago: ${a.paymentDate}`}
+                      </div>
                     </div>
                     <button className="btn btn-danger" onClick={() => handleDeleteApt(a.id)}>Eliminar</button>
                   </div>
@@ -740,6 +898,7 @@ export default function Home() {
   const TABS: Record<Tab, React.ReactNode> = {
     registro: TabRegistro(),
     historial: TabHistorial(),
+    pagos: TabPagos(),
     apartamentos: TabApartamentos(),
     ajustes: TabAjustes(),
   };

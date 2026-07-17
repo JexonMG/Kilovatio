@@ -310,15 +310,23 @@ tbody tr:hover { background: rgba(255,255,255,0.015); }
   * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 
   /* When receipt is open: hide everything except the receipt */
-  .receipt-overlay { display: none !important; }
-  .receipt-modal {
-    position: static !important; transform: none !important;
-    box-shadow: none !important; border-radius: 0 !important;
-    width: 100% !important; max-height: none !important;
-    padding: 0 !important; overflow: visible !important;
+  body.receipt-open-print .app-shell,
+  body.receipt-open-print .mobile-header,
+  body.receipt-open-print .receipt-overlay,
+  body.receipt-open-print .receipt-close {
+    display: none !important;
   }
-  /* Hide the whole app shell when receipt is open */
-  body:has(.receipt-modal) .app-shell { display: none !important; }
-  body:has(.receipt-modal) .mobile-header { display: none !important; }
+
+  body.receipt-open-print .receipt-modal {
+    position: static !important;
+    transform: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-height: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
+  }
 }
 
