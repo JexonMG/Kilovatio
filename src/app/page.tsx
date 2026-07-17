@@ -38,6 +38,144 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'ajustes',       label: 'Ajustes',        icon: '⚙️' },
 ];
 
+// ─── RECEIPT MODAL ────────────────────────────────────────────────────────────
+function ReceiptModal({
+  measurement,
+  aptName,
+  tariff,
+  onClose,
+}: {
+  measurement: ProcessedMeasurement;
+  aptName: string;
+  tariff: number;
+  onClose: () => void;
+}) {
+  const issueDate = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+  const readingDate = new Date(measurement.createdAt).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  return (
+    <>
+      {/* Overlay — hidden when printing */}
+      <div className="receipt-overlay no-print" onClick={onClose} />
+
+      <div className="receipt-modal">
+        {/* Screen-only close button */}
+        <button className="receipt-close no-print" onClick={onClose} aria-label="Cerrar">✕</button>
+
+        {/* ── RECEIPT CONTENT ───────────────────────────── */}
+        <div className="receipt-body" id="receipt-print">
+          {/* Header */}
+          <div className="receipt-header">
+            <div className="receipt-logo">⚡ Kilovatio</div>
+            <div className="receipt-title">RECIBO DE CONSUMO ELÉCTRICO</div>
+          </div>
+
+          <div className="receipt-meta">
+            <div className="receipt-meta-row">
+              <span className="receipt-meta-label">Número de unidad:</span>
+              <span className="receipt-meta-value">{aptName}</span>
+            </div>
+            <div className="receipt-meta-row">
+              <span className="receipt-meta-label">Período facturado:</span>
+              <span className="receipt-meta-value">{MONTHS[measurement.month - 1]} {measurement.year}</span>
+            </div>
+            <div className="receipt-meta-row">
+              <span className="receipt-meta-label">Fecha de lectura:</span>
+              <span className="receipt-meta-value">{readingDate}</span>
+            </div>
+            <div className="receipt-meta-row">
+              <span className="receipt-meta-label">Fecha de emisión del recibo:</span>
+              <span className="receipt-meta-value">{issueDate}</span>
+            </div>
+          </div>
+
+          <div className="receipt-divider" />
+
+          {/* Reading data */}
+          <table className="receipt-table">
+            <thead>
+              <tr>
+                <th>Descripción</th>
+                <th style={{ textAlign: 'right' }}>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Lectura actual del medidor</td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{measurement.reading.toLocaleString()} kWh</td>
+              </tr>
+              {measurement.consumption !== null ? (
+                <>
+                  <tr>
+                    <td>Consumo del período</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{measurement.consumption.toLocaleString()} kWh</td>
+                  </tr>
+                  {tariff > 0 && (
+                    <tr>
+                      <td>Tarifa aplicada</td>
+                      <td style={{ textAlign: 'right' }}>${tariff} / kWh</td>
+                    </tr>
+                  )}
+                </>
+              ) : (
+                <tr>
+                  <td colSpan={2} style={{ color: '#666', fontStyle: 'italic' }}>Lectura inicial — sin período anterior de comparación</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Total box */}
+          {measurement.consumption !== null && tariff > 0 && (
+            <div className="receipt-total-box">
+              <div className="receipt-total-label">TOTAL A PAGAR</div>
+              <div className="receipt-total-amount">${(measurement.consumption * tariff).toFixed(2)}</div>
+            </div>
+          )}
+          {measurement.consumption !== null && tariff === 0 && (
+            <div className="receipt-total-box" style={{ border: '2px dashed #999' }}>
+              <div className="receipt-total-label">CONSUMO TOTAL</div>
+              <div className="receipt-total-amount" style={{ color: '#1d4ed8' }}>{measurement.consumption.toLocaleString()} kWh</div>
+              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>Configura la tarifa para calcular el monto</div>
+            </div>
+          )}
+
+          {/* Estado */}
+          <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+            <span style={{
+              display: 'inline-block',
+              padding: '0.3rem 1rem',
+              borderRadius: '999px',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              background: measurement.paid ? '#dcfce7' : '#fee2e2',
+              color: measurement.paid ? '#166534' : '#991b1b',
+              border: `2px solid ${measurement.paid ? '#86efac' : '#fca5a5'}`,
+            }}>
+              {measurement.paid ? '✓ PAGADO' : '⏳ PENDIENTE DE PAGO'}
+            </span>
+          </div>
+
+          <div className="receipt-divider" style={{ marginTop: '1.5rem' }} />
+
+          <div className="receipt-footer">
+            Emitido por el sistema Kilovatio · {issueDate}
+          </div>
+        </div>
+
+        {/* Print button — screen only */}
+        <div className="no-print" style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <button className="btn btn-primary" style={{ padding: '0.75rem 2.5rem', fontSize: '1rem' }}
+            onClick={() => window.print()}>
+            🖨️ Imprimir Recibo
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function Home() {
   const [tab, setTab] = useState<Tab>('registro');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -46,6 +184,9 @@ export default function Home() {
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [settings, setSettings] = useState<Settings>({ tariff: 0 });
   const [loading, setLoading] = useState(true);
+
+  // Recibo abierto
+  const [receipt, setReceipt] = useState<ProcessedMeasurement | null>(null);
 
   // Registro
   const [regAptId, setRegAptId] = useState('');
@@ -94,14 +235,12 @@ export default function Home() {
   // ── Derived ──────────────────────────────────────────────────────────────
   const processed = useMemo<ProcessedMeasurement[]>(() => {
     const grouped: Record<string, Measurement[]> = {};
-    measurements.forEach(m => {
-      (grouped[m.apartmentId] ??= []).push(m);
-    });
+    measurements.forEach(m => { (grouped[m.apartmentId] ??= []).push(m); });
     const result: ProcessedMeasurement[] = [];
     Object.values(grouped).forEach(list => {
       const sorted = [...list].sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month);
       sorted.forEach((m, i) => {
-        const consumption = i > 0 ? m.reading - sorted[i-1].reading : null;
+        const consumption = i > 0 ? m.reading - sorted[i - 1].reading : null;
         const cost = consumption !== null && settings.tariff > 0 ? consumption * settings.tariff : null;
         result.push({ ...m, consumption, cost });
       });
@@ -111,8 +250,6 @@ export default function Home() {
 
   const totalKwh = processed.reduce((s, m) => s + (m.consumption ?? 0), 0);
   const totalCost = processed.reduce((s, m) => s + (m.cost ?? 0), 0);
-
-  // Unpaid = measurements with real consumption (not the initial reading) that are not paid
   const unpaidCount = processed.filter(m => !m.paid && m.consumption !== null).length;
 
   const filtered = processed.filter(m => {
@@ -127,6 +264,14 @@ export default function Home() {
   const aptName = (id: string) => apartments.find(a => a.id === id)?.name ?? '—';
   const aptCount = (id: string) => measurements.filter(m => m.apartmentId === id).length;
 
+  // Sync receipt data when measurements refresh (for paid toggle to reflect immediately)
+  useEffect(() => {
+    if (receipt) {
+      const updated = processed.find(m => m.id === receipt.id);
+      if (updated) setReceipt(updated);
+    }
+  }, [processed]);
+
   // ── Handlers ─────────────────────────────────────────────────────────────
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -138,12 +283,40 @@ export default function Home() {
         body: JSON.stringify({ apartmentId: regAptId, year, month, reading: parseFloat(reading) }),
       });
       if (res.ok) {
-        setReading('');
         if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1);
         await fetchAll();
+        // After fetchAll, find the newly created measurement and show receipt
+        setMeasurements(prev => {
+          const updated = [...prev];
+          return updated;
+        });
+        // Open receipt after data refreshes — use a tiny delay to let state settle
+        setTimeout(() => {
+          setMeasurements(prev => {
+            const newMeas = [...prev].sort((a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            )[0];
+            if (newMeas) {
+              // find in processed
+              setReceipt(p => p); // trigger re-render; actual receipt set below
+            }
+            return prev;
+          });
+        }, 300);
+        setReading('');
+        // Flag to open receipt after next processed update
+        setPendingReceipt(true);
       }
     } finally { setSubmitting(false); }
   }
+
+  const [pendingReceipt, setPendingReceipt] = useState(false);
+  useEffect(() => {
+    if (pendingReceipt && processed.length > 0) {
+      setPendingReceipt(false);
+      setReceipt(processed[0]); // most recent is first after sort
+    }
+  }, [pendingReceipt, processed]);
 
   async function handleCreateApt(e: React.FormEvent) {
     e.preventDefault();
@@ -154,20 +327,13 @@ export default function Home() {
     });
     if (res.ok) {
       const apt = await res.json();
-      // If user entered an initial reading, create the first measurement
       if (initialReading.trim() !== '') {
         await fetch(`${API_URL}/api/measurements`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apartmentId: apt.id,
-            year: aptYear,
-            month: aptMonth,
-            reading: parseFloat(initialReading),
-          }),
+          body: JSON.stringify({ apartmentId: apt.id, year: aptYear, month: aptMonth, reading: parseFloat(initialReading) }),
         });
       }
-      setNewAptName('');
-      setInitialReading('');
+      setNewAptName(''); setInitialReading('');
       await fetchAll();
     }
   }
@@ -185,7 +351,6 @@ export default function Home() {
   }
 
   async function handleTogglePaid(id: string, current: boolean) {
-    // Optimistic update
     setMeasurements(prev => prev.map(m => m.id === id ? { ...m, paid: !current } : m));
     try {
       await fetch(`${API_URL}/api/measurements/${id}`, {
@@ -193,7 +358,6 @@ export default function Home() {
         body: JSON.stringify({ paid: !current }),
       });
     } catch {
-      // Revert on error
       setMeasurements(prev => prev.map(m => m.id === id ? { ...m, paid: current } : m));
     }
   }
@@ -297,7 +461,7 @@ export default function Home() {
                 <div className="form-group">
                   <label htmlFor="month">Mes</label>
                   <select id="month" className="form-input" value={month} onChange={e => setMonth(+e.target.value)}>
-                    {MONTHS.map((m,i) => <option key={m} value={i+1} style={{ background: '#0a0f1e' }}>{m}</option>)}
+                    {MONTHS.map((m, i) => <option key={m} value={i + 1} style={{ background: '#0a0f1e' }}>{m}</option>)}
                   </select>
                 </div>
               </div>
@@ -307,7 +471,7 @@ export default function Home() {
                   onChange={e => setReading(e.target.value)} step="0.01" placeholder="Ej. 90000" required />
               </div>
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting}>
-                {submitting ? 'Guardando…' : 'Registrar Medición'}
+                {submitting ? 'Guardando…' : '✏️ Registrar y Ver Recibo'}
               </button>
             </form>
           )}
@@ -322,7 +486,7 @@ export default function Home() {
                 {processed.slice(0, 6).map(m => (
                   <tr key={m.id}>
                     <td style={{ fontWeight: 600 }}>{aptName(m.apartmentId)}</td>
-                    <td>{MONTHS[m.month-1]} {m.year}</td>
+                    <td>{MONTHS[m.month - 1]} {m.year}</td>
                     <td>
                       {m.consumption !== null
                         ? <span className="badge badge-amber">+{m.consumption.toLocaleString()} kWh</span>
@@ -334,15 +498,6 @@ export default function Home() {
               </tbody>
             </table>
           </div>
-          {processed[0] && (
-            <div className="info-box" style={{ marginTop: '1.25rem', color: 'var(--text)' }}>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Última lectura</div>
-              <strong style={{ fontSize: '1.4rem', color: 'var(--primary-hover)' }}>{processed[0].reading.toLocaleString()} kWh</strong>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                {MONTHS[processed[0].month-1]} {processed[0].year} · {aptName(processed[0].apartmentId)}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -359,7 +514,7 @@ export default function Home() {
           )}
         </div>
         <button className="btn btn-success no-print" onClick={() => window.print()}>
-          🖨️ Imprimir Reporte
+          🖨️ Imprimir Historial
         </button>
       </div>
       <div className="glass">
@@ -371,9 +526,9 @@ export default function Home() {
           <input type="number" className="form-input form-input-sm" style={{ width: '110px' }} placeholder="Año" value={fYear} onChange={e => setFYear(e.target.value)} />
           <select className="form-input form-input-sm" style={{ width: 'auto' }} value={fMonth} onChange={e => setFMonth(e.target.value)}>
             <option value="" style={{ background: '#0a0f1e' }}>Todos los meses</option>
-            {MONTHS.map((m,i) => <option key={m} value={i+1} style={{ background: '#0a0f1e' }}>{m}</option>)}
+            {MONTHS.map((m, i) => <option key={m} value={i + 1} style={{ background: '#0a0f1e' }}>{m}</option>)}
           </select>
-          <select className="form-input form-input-sm" style={{ width: 'auto' }} value={fPaid} onChange={e => setFPaid(e.target.value as 'all'|'unpaid'|'paid')}>
+          <select className="form-input form-input-sm" style={{ width: 'auto' }} value={fPaid} onChange={e => setFPaid(e.target.value as 'all' | 'unpaid' | 'paid')}>
             <option value="all" style={{ background: '#0a0f1e' }}>Todos los estados</option>
             <option value="unpaid" style={{ background: '#0a0f1e' }}>Sin pagar</option>
             <option value="paid" style={{ background: '#0a0f1e' }}>Pagados</option>
@@ -396,22 +551,18 @@ export default function Home() {
                 <th>Lectura (kWh)</th>
                 <th>Consumo</th>
                 {settings.tariff > 0 && <th>Costo</th>}
-                <th className="no-print">Acción</th>
+                <th className="no-print">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(m => (
-                <tr key={m.id} style={{ opacity: m.paid ? 0.6 : 1 }}>
+                <tr key={m.id} style={{ opacity: m.paid ? 0.65 : 1 }}>
                   <td>
                     {m.consumption === null ? (
                       <span className="badge badge-blue">Inicial</span>
                     ) : (
                       <label className="paid-toggle" title={m.paid ? 'Marcar como no pagado' : 'Marcar como pagado'}>
-                        <input
-                          type="checkbox"
-                          checked={m.paid}
-                          onChange={() => handleTogglePaid(m.id, m.paid)}
-                        />
+                        <input type="checkbox" checked={m.paid} onChange={() => handleTogglePaid(m.id, m.paid)} />
                         <span className={`paid-label ${m.paid ? 'paid' : 'unpaid'}`}>
                           {m.paid ? '✓ Pagado' : 'Sin pagar'}
                         </span>
@@ -419,7 +570,7 @@ export default function Home() {
                     )}
                   </td>
                   <td style={{ fontWeight: 600 }}>{aptName(m.apartmentId)}</td>
-                  <td>{MONTHS[m.month-1]}</td>
+                  <td>{MONTHS[m.month - 1]}</td>
                   <td>{m.year}</td>
                   <td style={{ fontFamily: 'monospace' }}>{m.reading.toLocaleString()}</td>
                   <td>
@@ -433,7 +584,13 @@ export default function Home() {
                     </td>
                   )}
                   <td className="no-print">
-                    <button className="btn btn-danger" onClick={() => handleDeleteMeas(m.id)}>Eliminar</button>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button className="btn btn-success" style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}
+                        onClick={() => setReceipt(m)}>
+                        🧾 Recibo
+                      </button>
+                      <button className="btn btn-danger" onClick={() => handleDeleteMeas(m.id)}>Eliminar</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -493,13 +650,12 @@ export default function Home() {
               <div className="grid-2" style={{ gap: '1rem' }}>
                 <div className="form-group">
                   <label htmlFor="aptYear">Año inicial</label>
-                  <input type="number" id="aptYear" className="form-input" value={aptYear}
-                    onChange={e => setAptYear(+e.target.value)} required />
+                  <input type="number" id="aptYear" className="form-input" value={aptYear} onChange={e => setAptYear(+e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="aptMonth">Mes inicial</label>
                   <select id="aptMonth" className="form-input" value={aptMonth} onChange={e => setAptMonth(+e.target.value)}>
-                    {MONTHS.map((m,i) => <option key={m} value={i+1} style={{ background: '#0a0f1e' }}>{m}</option>)}
+                    {MONTHS.map((m, i) => <option key={m} value={i + 1} style={{ background: '#0a0f1e' }}>{m}</option>)}
                   </select>
                 </div>
               </div>
@@ -594,9 +750,9 @@ export default function Home() {
         <div className="mobile-header-title">⚡ Kilovatio</div>
         <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menú">
           <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="2" y1="5" x2="18" y2="5"/>
-            <line x1="2" y1="10" x2="18" y2="10"/>
-            <line x1="2" y1="15" x2="18" y2="15"/>
+            <line x1="2" y1="5" x2="18" y2="5" />
+            <line x1="2" y1="10" x2="18" y2="10" />
+            <line x1="2" y1="15" x2="18" y2="15" />
           </svg>
         </button>
       </header>
@@ -608,6 +764,16 @@ export default function Home() {
           ? <div className="glass empty-state">Cargando datos…</div>
           : TABS[tab]}
       </main>
+
+      {/* Receipt modal */}
+      {receipt && (
+        <ReceiptModal
+          measurement={receipt}
+          aptName={aptName(receipt.apartmentId)}
+          tariff={settings.tariff}
+          onClose={() => setReceipt(null)}
+        />
+      )}
     </div>
   );
 }
