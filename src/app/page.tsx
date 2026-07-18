@@ -385,7 +385,6 @@ export default function Home() {
         body: JSON.stringify({ apartmentId: regAptId, year, month, reading: parseFloat(reading) }),
       });
       if (res.ok) {
-        if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1);
         await fetchAll();
         setReading('');
         setPendingReceipt(true);

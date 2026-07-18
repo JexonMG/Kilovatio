@@ -328,5 +328,16 @@ tbody tr:hover { background: rgba(255,255,255,0.015); }
     overflow: visible !important;
     background: transparent !important;
   }
+
+  body.receipt-open-print .receipt-total-box {
+    background: transparent !important;
+    border: 2px solid black !important;
+    color: black !important;
+  }
+  
+  body.receipt-open-print .receipt-total-label,
+  body.receipt-open-print .receipt-total-amount {
+    color: black !important;
+  }
 }
 
