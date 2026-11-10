@@ -24,3 +24,4 @@ export default function StatusBadge({ measurement, size = 'md' }: Props) {
     </span>
   );
 }
+

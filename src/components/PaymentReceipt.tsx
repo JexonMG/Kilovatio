@@ -158,3 +158,4 @@ export default function PaymentReceipt({ measurement, aptName, onClose }: Props)
     </>
   );
 }
+
