@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { DashboardData, Measurement, Apartment } from '@/lib/types';
 import { MONTHS } from '@/lib/constants';
-import { getInvoiceStatus, API_URL } from '@/lib/utils';
+import { getInvoiceStatus, formatDueDate, API_URL } from '@/lib/utils';
 import StatusBadge from '@/components/StatusBadge';
 
 export default function HomePage() {
@@ -192,7 +192,7 @@ export default function HomePage() {
                       <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{aptName(m.apartmentId)}</div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                         {MONTHS[m.month - 1]} {m.year}
-                        {m.dueDate && ` · Venció: ${fmt(m.dueDate)}`}
+                        {m.dueDate && ` · Venció: ${formatDueDate(m.dueDate)}`}
                       </div>
                     </div>
                     <span className="status-badge status-overdue" style={{ fontSize: '0.7rem' }}>NO PAGADO</span>

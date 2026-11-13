@@ -1,7 +1,7 @@
 'use client';
 
 import { Measurement } from '@/lib/types';
-import { getInvoiceStatus } from '@/lib/utils';
+import { getInvoiceStatus, formatDueDate } from '@/lib/utils';
 import { MONTHS } from '@/lib/constants';
 
 interface Props {
@@ -14,7 +14,6 @@ export default function PaymentReceipt({ measurement, aptName, onClose }: Props)
   const status = getInvoiceStatus(measurement);
   const isPaid = measurement.paid;
   const paidAtDate = measurement.paidAt ? new Date(measurement.paidAt) : null;
-  const dueDate = measurement.dueDate ? new Date(measurement.dueDate) : null;
   const readingDate = new Date(measurement.createdAt);
   const issueDate = new Date();
 
@@ -75,7 +74,7 @@ export default function PaymentReceipt({ measurement, aptName, onClose }: Props)
             <div className="receipt-meta-row">
               <span className="receipt-meta-label">Fecha de vencimiento:</span>
               <span className="receipt-meta-value" style={{ color: status === 'overdue' && !isPaid ? '#dc2626' : undefined }}>
-                {dueDate ? fmt(dueDate) : '—'}
+                {formatDueDate(measurement.dueDate, { year: 'numeric', month: 'long', day: 'numeric' })}
               </span>
             </div>
             {isPaid && paidAtDate && (

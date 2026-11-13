@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Measurement, Apartment } from '@/lib/types';
 import { MONTHS } from '@/lib/constants';
-import { getInvoiceStatus, API_URL } from '@/lib/utils';
+import { getInvoiceStatus, formatDueDate, API_URL } from '@/lib/utils';
 import StatusBadge from '@/components/StatusBadge';
 import PaymentReceipt from '@/components/PaymentReceipt';
 
@@ -209,9 +209,7 @@ export default function PagosPage() {
                         <div>
                           <div style={{ color: 'var(--text-muted)' }}>Vencimiento</div>
                           <div style={{ fontWeight: 700, color: getInvoiceStatus(selectedMeas) === 'overdue' ? 'var(--danger)' : 'var(--text)' }}>
-                            {selectedMeas.dueDate
-                              ? new Date(selectedMeas.dueDate).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })
-                              : '—'}
+                            {formatDueDate(selectedMeas.dueDate)}
                           </div>
                         </div>
                         <div>
@@ -259,7 +257,7 @@ export default function PagosPage() {
                         {m.cost != null ? `₡${m.cost.toFixed(2)}` : '—'}
                       </td>
                       <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {m.dueDate ? new Date(m.dueDate).toLocaleDateString('es-CR', { day: '2-digit', month: 'short' }) : '—'}
+                        {formatDueDate(m.dueDate, { day: '2-digit', month: 'short' })}
                       </td>
                     </tr>
                   ))}

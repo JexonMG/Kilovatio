@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Measurement, Apartment, Settings } from '@/lib/types';
 import { MONTHS } from '@/lib/constants';
-import { getInvoiceStatus, API_URL } from '@/lib/utils';
+import { getInvoiceStatus, formatDueDate, API_URL } from '@/lib/utils';
 import StatusBadge from '@/components/StatusBadge';
 import PaymentReceipt from '@/components/PaymentReceipt';
 
@@ -275,7 +275,7 @@ export default function MedicionesPage() {
                     <td style={{ fontSize: '0.82rem' }}>
                       {m.dueDate
                         ? <span style={{ color: status === 'overdue' && !m.paid ? 'var(--danger)' : 'var(--text-muted)' }}>
-                          {new Date(m.dueDate).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {formatDueDate(m.dueDate)}
                         </span>
                         : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                     </td>
